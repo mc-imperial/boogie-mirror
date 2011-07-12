@@ -27,7 +27,6 @@ The Model.Element class exposes methods to look up all the functions that refere
 defining tuples. Additionally Model.Func allows lookup of specific tuples, based on the elements.
 
 An instance of the Model class represents a single model returned from the SMT solver.
- 
  */
 
 using System;
