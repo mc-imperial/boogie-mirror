@@ -609,6 +609,7 @@ namespace VC
             abstract public void Pop();
             abstract public void AddAxiom(VCExpr vc);
             abstract public void LogComment(string str);
+            abstract public Outcome Interpolate(VCExpr[] formulas, out VCExpr[] interpolants);
             abstract public void updateMainVC(VCExpr vcMain);
             virtual public Outcome CheckAssumptions(List<VCExpr> assumptions, out List<int> unsatCore)
             {
@@ -730,6 +731,13 @@ namespace VC
                 checker.TheoremProver.LogComment(str);
             }
 
+            public override Outcome Interpolate(VCExpr[] formulas, out VCExpr[] interpolants)
+            {
+                Contract.Assert(false);
+                interpolants = null;
+                return Outcome.Inconclusive;
+            }
+
         }
 
 
@@ -759,13 +767,18 @@ namespace VC
                 TheoremProver = checker.TheoremProver as ApiProverInterface;
                 Debug.Assert(TheoremProver != null);
 
-                // Add main to the TP stack
-                TheoremProver.Assert(vcMain, false);
+                // Add main to the TP stack if incremental
+                bool incrementalSearch =
+                    CommandLineOptions.Clo.StratifiedInliningOption == 0 ||
+                    CommandLineOptions.Clo.StratifiedInliningOption == 2;
+
+                if(incrementalSearch)
+                   TheoremProver.Assert(vcMain, false);
             }
 
             public override void updateMainVC(VCExpr vcMain)
             {
-                throw new NotImplementedException("Stratified non-incremental search is not yet supported with z3api");
+                // this does nothing, as we will build this formula later
             }
 
             public override Outcome CheckVC()
@@ -812,6 +825,11 @@ namespace VC
                 TheoremProver.Assert(vc, true);
             }
 
+            public void AddConjecture(VCExpr vc)
+            {
+                TheoremProver.Assert(vc, false);
+            }
+             
             public override void LogComment(string str)
             {
                 checker.TheoremProver.LogComment(str);
@@ -854,7 +872,35 @@ namespace VC
                         throw new cce.UnreachableException();
                 }
             }
-             
+
+            public override Outcome Interpolate(VCExpr[] formulas, out VCExpr[] interpolants)
+            {
+                //TheoremProver.Push();
+                TheoremProver.AssertAxioms();
+                var itp = TheoremProver as InterpolatingApiProverInterface;
+                itp.Interpolate(formulas, out interpolants);
+                ProverInterface.Outcome outcome = TheoremProver.CheckOutcome(reporter);
+                //TheoremProver.Pop();
+                numQueries++;
+
+                switch (outcome)
+                {
+                    case ProverInterface.Outcome.Valid:
+                        return Outcome.Correct;
+                    case ProverInterface.Outcome.Invalid:
+                        return Outcome.Errors;
+                    case ProverInterface.Outcome.OutOfMemory:
+                        return Outcome.OutOfMemory;
+                    case ProverInterface.Outcome.TimeOut:
+                        return Outcome.TimedOut;
+                    case ProverInterface.Outcome.Undetermined:
+                        return Outcome.Inconclusive;
+                    default:
+                        Contract.Assert(false);
+                        throw new cce.UnreachableException();
+                }
+            }
+
         }
 
         // Store important information related to a single VerifyImplementation query
@@ -881,6 +927,7 @@ namespace VC
                     return checker.numQueries;
                 }
             }
+            public Dictionary<int, VCExpr/*!*/>/*!*/ vcMap; // maps call id's to VC's
 
             public VerificationState(VCExpr vcMain, FCallHandler calls,
                 ProverInterface.ErrorHandler reporter, Checker checker)
@@ -898,6 +945,7 @@ namespace VC
                 }
                 vcSize = 0;
                 expansionCount = 0;
+                vcMap = new Dictionary<int, VCExpr>();
             }
 
             public void updateMainVC(VCExpr vcMain)
@@ -1416,6 +1464,7 @@ namespace VC
             return ret;
         }
 
+
         // A step of the stratified inlining algorithm: both under-approx and over-approx queries
         private Outcome stratifiedStep(int bound, VerificationState vState)
         {
@@ -1441,7 +1490,10 @@ namespace VC
                     ids.Add(id);
                 }
 
-                ret = checker.CheckAssumptions(assumptions, out unsatCore);
+
+                bool incrementalSearch;
+                CheckAssumptions2(vState, checker, assumptions, ids, out ret, out unsatCore, out incrementalSearch);
+
                 if (!CommandLineOptions.Clo.UseUnsatCoreForInlining) break;
                 if (ret != Outcome.Correct) break;
                 Debug.Assert(unsatCore.Count <= assumptions.Count);
@@ -1452,9 +1504,7 @@ namespace VC
                 foreach (int i in unsatCore)
                     unsatCoreIds.Add(ids[i]);
                 vState.checker.LogComment(";;;;;;;;;;;; Expansion begin ;;;;;;;;;;");
-                bool incrementalSearch = 
-                    CommandLineOptions.Clo.StratifiedInliningOption == 0 ||
-                    CommandLineOptions.Clo.StratifiedInliningOption == 2;
+                
                 DoExpansion(incrementalSearch, unsatCoreIds, vState);
                 vState.calls.forcedCandidates.UnionWith(unsatCoreIds);
                 vState.checker.LogComment(";;;;;;;;;;;; Expansion end ;;;;;;;;;;");
@@ -1496,6 +1546,7 @@ namespace VC
             bool allFalse = true;
 
             assumptions = new List<VCExpr>();
+            ids.Clear();
             foreach (int id in calls.currCandidates)
             {
                 if (calls.getRecursionBound(id) <= bound)
@@ -1507,6 +1558,7 @@ namespace VC
                 {
                     //checker.AddAxiom(calls.getFalseExpr(id));
                     assumptions.Add(calls.getFalseExpr(id));
+                    ids.Add(id);
                     allTrue = false;
                 }
             }
@@ -1519,7 +1571,8 @@ namespace VC
             }
             else
             {
-                ret = checker.CheckAssumptions(assumptions, out unsatCore);
+                bool incrementalSearch;
+                CheckAssumptions2(vState, checker, assumptions, ids, out ret, out unsatCore, out incrementalSearch);
             }
 
             if (ret != Outcome.Correct && ret != Outcome.Errors)
@@ -1546,6 +1599,81 @@ namespace VC
             checker.LogComment(";;;;;;;;;;;; Overapprox mode end ;;;;;;;;;;");
 
             return ret;
+        }
+
+        private static bool subtreeRootedAtRecur(Dictionary<int, int> parents, HashSet<int> subtree, int node)
+        {
+            if (subtree.Contains(node)) return true;
+            if (parents.Keys.Contains(node))
+            {
+                var parent = parents[node];
+                if (subtreeRootedAtRecur(parents, subtree, parent))
+                {
+                    subtree.Add(node);
+                    return true;
+                }
+            }
+            return false;
+        }
+            
+            private static HashSet<int> subtreeRootedAt(Dictionary<int, int> parents, int node)
+        {
+            var subtree = new HashSet<int>();
+            subtree.Add(node);
+            foreach (var x in parents.Keys)
+                subtreeRootedAtRecur(parents, subtree, x);
+            return subtree;
+        }
+
+        private static void CheckAssumptions2(VerificationState vState, StratifiedCheckerInterface checker, List<VCExpr> assumptions, List<int> ids, out Outcome ret, out List<int> unsatCore, out bool incrementalSearch)
+        {
+            incrementalSearch =
+                CommandLineOptions.Clo.StratifiedInliningOption == 0 ||
+                CommandLineOptions.Clo.StratifiedInliningOption == 2;
+
+            var formulas = new VCExpr[2]; 
+            if (!incrementalSearch)
+            {
+                vState.checker.Push();
+                // vState.checker.AddAxiom(VCExpressionGenerator.vcMain, false);
+                var my_checker = vState.checker.underlyingChecker;
+                //vState.checker.AddAxiom(my_checker.VCExprGen.Not(vState.vcMain));
+                var mainVc = my_checker.VCExprGen.Not(vState.vcMain);
+                var subtreeA = subtreeRootedAt(vState.calls.candidateParent, 1);
+                var xg = vState.checker.underlyingChecker.VCExprGen;
+                
+                for(int i = 0; i < 2; i++) formulas[i] = VCExpressionGenerator.True;
+                formulas[1] = xg.AndSimp(formulas[1], mainVc);
+                foreach (var x in vState.vcMap.Keys)
+                {
+                    var vc = vState.vcMap[x];
+                    //vState.checker.AddAxiom(vc);
+                    var side = subtreeA.Contains(x) ? 0 : 1;
+                    formulas[side] = xg.AndSimp(formulas[side], vc);
+                }
+                var assumptions_a = assumptions.ToArray();
+                var ids_a = ids.ToArray();
+                for (int i = 0; i < ids_a.Length; i++)
+                {
+                    var id = ids_a[i];
+                    var expr = assumptions_a[i];
+                    var side = subtreeA.Contains(id) ? 0 : 1;
+                    formulas[side] = xg.AndSimp(formulas[side], expr);
+                }
+                 
+
+            }
+
+            //ret = checker.CheckAssumptions(assumptions, out unsatCore);
+            VCExpr[] interpolants;
+            ret = checker.Interpolate(formulas, out interpolants);
+            unsatCore = null;
+
+            if (!incrementalSearch)
+            {
+                vState.checker.Pop();
+            }
+
         }
 
         // A counter for adding new variables
@@ -1710,12 +1838,14 @@ namespace VC
                 expansion = calls.Mutate(expansion, true);
                 vState.coverageManager.addRecentEdges(id);
 
-                inliner.subst.Add(id, expansion);
+                expansion = checker.VCExprGen.Implies(calls.id2ControlVar[id], expansion); 
+                vState.vcMap.Add(id, expansion);
+                // inliner.subst.Add(id, expansion);
 
             }
 
-            vState.updateMainVC(inliner.Mutate(vState.vcMain, true));
-            vState.vcSize = SizeComputingVisitor.ComputeSize(vState.vcMain);
+            //vState.updateMainVC(inliner.Mutate(vState.vcMain, true));
+            //vState.vcSize = SizeComputingVisitor.ComputeSize(vState.vcMain);
         }
 
         // Return the VC for the impl (don't pass it to the theorem prover).

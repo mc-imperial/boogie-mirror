@@ -60,7 +60,7 @@
     <OutputPath>bin\z3apidebug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <DebugType>full</DebugType>
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x86</PlatformTarget>
     <CodeAnalysisRuleAssemblies>
     </CodeAnalysisRuleAssemblies>
     <CodeAnalysisUseTypeNameInSuppression>true</CodeAnalysisUseTypeNameInSuppression>
@@ -118,9 +118,12 @@
   </Target>
   -->
   <ItemGroup>
-    <Reference Include="Microsoft.Z3, Version=2.0.40827.2, Culture=neutral, PublicKeyToken=9c8d792caae602a2, processorArchitecture=x86">
+    <Reference Include="Microsoft.FociZ3">
+      <HintPath>..\..\..\..\Microsoft.FociZ3\bin\Debug\Microsoft.FociZ3.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Z3, Version=1.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\Binaries\Microsoft.Z3.dll</HintPath>
+      <HintPath>..\..\..\..\..\..\..\tvm\src\z3_2\Microsoft.Z3.csharp\bin\Release\Microsoft.Z3.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core">

@@ -8,6 +8,7 @@ using Microsoft.Boogie.AbstractInterpretation;
 using Microsoft.Boogie;
 using Microsoft.Boogie.Z3;
 using Microsoft.Z3;
+using Microsoft.FociZ3;
 using Microsoft.Boogie.VCExprAST;
 using Microsoft.Basetypes;
 
@@ -20,6 +21,7 @@ namespace Microsoft.Boogie.Z3 {
     internal BacktrackDictionary<string, Term> constants = new BacktrackDictionary<string, Term>();
     internal BacktrackDictionary<string, FuncDecl> functions = new BacktrackDictionary<string, FuncDecl>();
     internal BacktrackDictionary<string, Term> labels = new BacktrackDictionary<string, Term>();
+    internal BacktrackDictionary<Term, VCExpr> constants_inv = new BacktrackDictionary<Term, VCExpr>();
 
     public Config config;
     public Context z3;
@@ -37,9 +39,9 @@ namespace Microsoft.Boogie.Z3 {
       int timeout = opts.Timeout * 1000;
       config = new Config();
       config.SetParamValue("MODEL", "true");
-      config.SetParamValue("MODEL_V2", "true");
-      config.SetParamValue("MODEL_COMPLETION", "true");
-      config.SetParamValue("MBQI", "false");
+      //config.SetParamValue("MODEL_V2", "true");
+      //config.SetParamValue("MODEL_COMPLETION", "true");
+      //config.SetParamValue("MBQI", "false");
       config.SetParamValue("TYPE_CHECK", "true");
       if (0 <= timeout) {
         config.SetParamValue("SOFT_TIMEOUT", timeout.ToString());
@@ -53,7 +55,7 @@ namespace Microsoft.Boogie.Z3 {
       }
       this.debugTraces = new List<string>();
 
-      z3 = new Context(config);
+      z3 = new FociZ3Context(config);
       z3.SetPrintMode(PrintMode.Smtlib2Compliant);
       if (logFilename != null)
         z3.OpenLog(logFilename);
@@ -134,6 +136,7 @@ namespace Microsoft.Boogie.Z3 {
       constants.CreateBacktrackPoint();
       functions.CreateBacktrackPoint();
       labels.CreateBacktrackPoint();
+      constants_inv.CreateBacktrackPoint();
       z3.Push();
       log("(push)");
     }
@@ -144,6 +147,8 @@ namespace Microsoft.Boogie.Z3 {
       functions.Backtrack();
       constants.Backtrack();
       symbols.Backtrack();
+      constants_inv.Backtrack();
+
       log("(pop)");
     }
 
@@ -357,6 +362,235 @@ namespace Microsoft.Boogie.Z3 {
       }
     }
 
+    private class fromZ3
+    {
+        private VCExpressionGenerator gen;
+        private Dictionary<Term, VCExpr> memo;
+        private BacktrackDictionary<Term,VCExpr> constants_inv;
+
+        public fromZ3(VCExpressionGenerator _gen,
+                      BacktrackDictionary<Term,VCExpr> _constants_inv){
+            gen = _gen;
+            constants_inv = _constants_inv;
+            memo = new Dictionary<Term, VCExpr>();
+        }
+
+        public VCExpr get(Term arg)
+        {
+            if (memo.ContainsKey(arg))
+                return memo[arg];
+            VCExpr res = null;
+            switch (arg.GetKind())
+            {
+                case TermKind.Numeral:
+                    var numstr = arg.GetNumeralString();
+                    var bignum = Basetypes.BigNum.FromString(numstr);
+                    res = gen.Integer(bignum);
+                    break;
+                case TermKind.App:
+                    var args = arg.GetAppArgs();
+                    var vcargs = new VCExpr[args.Length];
+                    for (int i = 0; i < args.Length; i++)
+                        vcargs[i] = get(args[i]);
+
+                    switch (arg.GetAppDecl().GetKind())
+                    {
+                        case DeclKind.Add:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Add(vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.And:
+                            res = VCExpressionGenerator.True;
+                            for (int i = 0; i < vcargs.Length; i++)
+                                res = gen.AndSimp(res, vcargs[i]);
+                            break;
+                        case DeclKind.Div:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.DivOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Eq:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Eq(vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.False:
+                            res = VCExpressionGenerator.False;
+                            break;
+                        case DeclKind.Ge:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.GeOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Gt:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Gt(vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.IDiv:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.DivOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Iff:
+                            Debug.Assert(vcargs.Length == 2);
+                            throw new Exception("Z3 op Iff not supported");
+                        case DeclKind.Implies:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Implies(vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Ite:
+                            Debug.Assert(vcargs.Length == 3);
+                            res = gen.Function(VCExpressionGenerator.IfThenElseOp, vcargs[0], vcargs[1], vcargs[2]);
+                            break;
+                        case DeclKind.Le:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.LeOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Lt:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.LtOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Mod:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.ModOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Mul:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.MulOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Not:
+                            Debug.Assert(vcargs.Length == 1);
+                            res = gen.Not(vcargs[0]);
+                            break;
+                        case DeclKind.Or:
+                            res = VCExpressionGenerator.True;
+                            for (int i = 0; i < vcargs.Length; i++)
+                                res = gen.OrSimp(res, vcargs[i]);
+                            break;
+                        case DeclKind.Select:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Select(vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.Store:
+                            Debug.Assert(vcargs.Length == 3);
+                            res = gen.Store(vcargs[0], vcargs[1], vcargs[2]);
+                            break;
+                        case DeclKind.Sub:
+                            Debug.Assert(vcargs.Length == 2);
+                            res = gen.Function(VCExpressionGenerator.SubOp, vcargs[0], vcargs[1]);
+                            break;
+                        case DeclKind.True:
+                            res = VCExpressionGenerator.True;
+                            break;
+                        case DeclKind.Uminus:
+                            Debug.Assert(vcargs.Length == 1);
+                            var bigzero = Basetypes.BigNum.FromInt(0);
+                            res = gen.Function(VCExpressionGenerator.SubOp, gen.Integer(bigzero), vcargs[0]);
+                            break;
+                        case DeclKind.Uninterpreted:
+                            var name = arg.GetAppDecl().GetDeclName();
+                            if (args.Length == 0)
+                            { // a 0-ary constant is a VCExprVar
+                                if (!constants_inv.TryGetValue(arg, out res))
+                                throw new Exception("Z3 returned unknown constant: " + name);
+                            }
+                            else
+                                throw new Exception("Z3 uninterpreted functions not supported yet");
+                            break;
+                        default:
+                            throw new Exception("Unknown Z3 operator");
+                    }
+                    break;
+                default:
+                    Debug.Assert(false);
+                    throw new Exception("Unknown Z3 AST kind");
+            }
+
+            memo.Add(arg, res);
+            return res;
+        }
+    }
+
+
+    public ProverInterface.Outcome Interpolate(VCExpr[] formulas, LineariserOptions linOptions,
+  out VCExpr[] interpolants,
+  out List<Z3ErrorModelAndLabels> boogieErrors)
+    {
+        Microsoft.Boogie.Helpers.ExtraTraceInformation("Sending data to the theorem prover");
+        boogieErrors = new List<Z3ErrorModelAndLabels>();
+        LBool outcome = LBool.Undef;
+
+        Microsoft.Z3.Model z3Model;
+        Term[] formula_terms = new Term[formulas.Length];
+        var logstring = "";
+        for (int i = 0; i < formulas.Length; i++)
+        {
+            Z3apiExprLineariser visitor = new Z3apiExprLineariser(this, namer);
+            Term z3ast = (Term)formulas[i].Accept(visitor, linOptions);
+            formula_terms[i] = z3ast;
+            logstring += string.Format("({0}) ", formula_terms[i]);
+        }
+
+        log("(get-core {0})", logstring);
+        Term[] interpolant_terms;
+        var z3itp = z3 as FociZ3Context;
+        LabeledLiterals labels;
+        outcome = z3itp.Interpolate(formula_terms, out interpolant_terms, out z3Model, out labels);
+
+        if (outcome != LBool.False)
+        {
+            BoogieErrorsFromLabels(boogieErrors, z3Model, labels);
+        }
+
+        if (boogieErrors.Count > 0)
+        {
+            interpolants = null;
+            return ProverInterface.Outcome.Invalid;
+        }
+        else if (outcome == LBool.False)
+        {
+            interpolants = new VCExpr[formulas.Length - 1];
+            var fZ = new fromZ3(gen, constants_inv);
+            for (int i = 0; i < formulas.Length - 1; i++)
+            {
+                interpolants[i] = fZ.get(interpolant_terms[i]);
+            }
+            return ProverInterface.Outcome.Valid;
+        }
+        else
+        {
+            Debug.Assert(outcome == LBool.Undef);
+            interpolants = null;
+            return ProverInterface.Outcome.Undetermined;
+        }
+    }
+
+    private void BoogieErrorsFromLabels(List<Z3ErrorModelAndLabels> boogieErrors, Microsoft.Z3.Model z3Model, LabeledLiterals labels)
+    {
+
+        List<string> labelStrings = new List<string>();
+        uint numLabels = labels.GetNumLabels();
+        for (uint i = 0; i < numLabels; ++i)
+        {
+            Symbol sym = labels.GetLabel(i);
+            string labelName = z3.GetSymbolString(sym);
+            if (!labelName.StartsWith("@"))
+            {
+                labels.Disable(i);
+            }
+            labelStrings.Add(labelName);
+        }
+        var sw = new StringWriter();
+        sw.WriteLine("*** MODEL");
+        z3Model.Display(sw);
+        sw.WriteLine("*** END_MODEL");
+        var sr = new StringReader(sw.ToString());
+        var models = Microsoft.Boogie.Model.ParseModels(sr);
+        Z3ErrorModelAndLabels e = new Z3ErrorModelAndLabels(new ErrorModel(models[0]), new List<string>(labelStrings));
+        boogieErrors.Add(e); 
+
+        labels.Dispose();
+        z3Model.Dispose();
+    }
+
+
+
     private Symbol GetSymbol(string symbolName) {
       if (!symbols.ContainsKey(symbolName)) {
         Symbol symbolAst = z3.MkSymbol(symbolName);
@@ -368,14 +602,19 @@ namespace Microsoft.Boogie.Z3 {
       return result;
     }
 
-    public Term GetConstant(string constantName, Type constantType) {
-      Term typeSafeTerm;
-      if (!constants.ContainsKey(constantName))
-        this.DeclareConstant(constantName, constantType);
+    public Term GetConstant(string constantName, Type constantType, VCExpr node)
+    {
+        Term typeSafeTerm;
+        if (!constants.ContainsKey(constantName))
+            this.DeclareConstant(constantName, constantType);
 
-      if (!constants.TryGetValue(constantName, out typeSafeTerm))
-        throw new Exception("constant " + constantName + " is not defined");
-      return typeSafeTerm;
+        if (!constants.TryGetValue(constantName, out typeSafeTerm))
+            throw new Exception("constant " + constantName + " is not defined");
+
+        if (!constants_inv.ContainsKey(typeSafeTerm))
+            constants_inv.Add(typeSafeTerm, node);
+
+        return typeSafeTerm;
     }
 
     public FuncDecl GetFunction(string functionName) {

@@ -873,6 +873,12 @@ namespace Microsoft.Boogie {
       public abstract void Push();
   }
 
+  public abstract class InterpolatingApiProverInterface : ApiProverInterface
+  {
+      public abstract void Interpolate(VCExpr[] formulas, out VCExpr[] interpolants);
+  }
+
+    
   public class ProverException : Exception {
     public ProverException(string s)
       : base(s) {

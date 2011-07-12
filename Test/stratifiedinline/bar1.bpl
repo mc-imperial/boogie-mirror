@@ -18,7 +18,7 @@ modifies x, y;
 
 procedure main()
 requires x == y;
-ensures x != y;
+ensures x == y;
 modifies x, y;
 {
   call foo();

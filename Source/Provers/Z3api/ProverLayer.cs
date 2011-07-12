@@ -20,7 +20,7 @@ using PatternAst = System.IntPtr;
 
 namespace Microsoft.Boogie.Z3
 {
-    public class Z3apiProcessTheoremProver : ApiProverInterface
+    public class Z3apiProcessTheoremProver : InterpolatingApiProverInterface
     {
         public Z3apiProcessTheoremProver(Z3InstanceOptions opts, DeclFreeProverContext ctxt)
         {
@@ -96,6 +96,13 @@ namespace Microsoft.Boogie.Z3
         {
             LineariserOptions linOptions = new Z3LineariserOptions(false, (Z3InstanceOptions)this.options, new List<VCExprVar>());
             outcome = context.CheckAssumptions(assumptions, linOptions, out z3LabelModels, out unsatCore);
+        }
+
+        public override void Interpolate(VCExpr[] formulas, out VCExpr[] interpolants)
+        {
+            
+            LineariserOptions linOptions = new Z3LineariserOptions(false, (Z3InstanceOptions)this.options, new List<VCExprVar>());
+            outcome = context.Interpolate(formulas, linOptions, out interpolants, out z3LabelModels);
         }
 
         public override void Push()
