@@ -1625,12 +1625,29 @@ namespace VC
             return subtree;
         }
 
-        private static void CheckAssumptions2(VerificationState vState, StratifiedCheckerInterface checker, List<VCExpr> assumptions, List<int> ids, out Outcome ret, out List<int> unsatCore, out bool incrementalSearch)
+        private void CheckAssumptions2(VerificationState vState, StratifiedCheckerInterface checker, List<VCExpr> assumptions, List<int> ids, out Outcome ret, out List<int> unsatCore, out bool incrementalSearch)
         {
             incrementalSearch =
                 CommandLineOptions.Clo.StratifiedInliningOption == 0 ||
                 CommandLineOptions.Clo.StratifiedInliningOption == 2;
-
+            
+            var proc = CommandLineOptions.Clo.SummarizeOption;
+            int cid = 1; // by default, summarize the first expanded procedure call
+            if (proc != null){
+                cid = -1;  // to flag not found
+                foreach (var bar in vState.calls.id2Candidate)
+                {
+                    VCExprNAry expr = bar.Value;
+                    Contract.Assert(expr != null);
+                    string procName = (cce.NonNull(expr.Op as VCExprBoogieFunctionOp)).Func.Name;
+                    if (procName == proc)
+                    {
+                        cid = bar.Key;
+                        break;
+                    }
+                }
+            }
+            
             var formulas = new VCExpr[2]; 
             if (!incrementalSearch)
             {
@@ -1639,7 +1656,7 @@ namespace VC
                 var my_checker = vState.checker.underlyingChecker;
                 //vState.checker.AddAxiom(my_checker.VCExprGen.Not(vState.vcMain));
                 var mainVc = my_checker.VCExprGen.Not(vState.vcMain);
-                var subtreeA = subtreeRootedAt(vState.calls.candidateParent, 1);
+                var subtreeA = subtreeRootedAt(vState.calls.candidateParent, cid);
                 var xg = vState.checker.underlyingChecker.VCExprGen;
                 
                 for(int i = 0; i < 2; i++) formulas[i] = VCExpressionGenerator.True;
@@ -1673,6 +1690,45 @@ namespace VC
             {
                 vState.checker.Pop();
             }
+
+#if true
+            if (interpolants != null && cid != -1)
+            {
+                var uchecker = vState.checker.underlyingChecker;
+                VCExprNAry expr = vState.calls.id2Candidate[cid];
+                Contract.Assert(expr != null);
+
+                string procName = (cce.NonNull(expr.Op as VCExprBoogieFunctionOp)).Func.Name;
+                if (!implName2StratifiedInliningInfo.ContainsKey(procName)) 
+                    throw new Exception("couldn't find info for procedure " + procName);
+
+                StratifiedInliningInfo info = implName2StratifiedInliningInfo[procName];
+                if (info.initialized)
+                {
+                    for (int i = 0; i < interpolants.Length; i++)
+                    {
+
+                        // Map the "forall" variables back to the originals
+                        Dictionary<VCExprVar, VCExpr> substForallDict = new Dictionary<VCExprVar, VCExpr>();
+                        Contract.Assert(info.interfaceExprVars.Count == expr.Length);
+                        for (int j = 0; j < info.interfaceExprVars.Count; j++)
+                        {
+                            var v = expr[j] as VCExprVar;
+                            if (v == null) throw new Exception("Parameter for " + procName + " is not a variable");
+                            substForallDict.Add(v, info.interfaceExprVars[j]);
+                        }
+                        substForallDict.Add(vState.calls.id2ControlVar[cid], VCExpressionGenerator.True);
+
+                        VCExprSubstitution substForall = new VCExprSubstitution(substForallDict, new Dictionary<TypeVariable, Microsoft.Boogie.Type>());
+
+                        SubstitutingVCExprVisitor subst = new SubstitutingVCExprVisitor(uchecker.VCExprGen); Contract.Assert(subst != null);
+                        interpolants[i] = subst.Mutate(interpolants[i], substForall);
+
+                        Console.WriteLine("Summary for procedure " + procName + ": " + interpolants[i].ToString());
+                    }
+                }
+            }
+#endif
 
         }
 

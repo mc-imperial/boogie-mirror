@@ -93,6 +93,8 @@ namespace VC {
       public Variable inputErrorVariable;
       public Variable outputErrorVariable;
 
+      public Dictionary<Constant, Variable> interfacePostMap;  // maps post-state interface vars back to program vars
+
       public LazyInliningInfo(Implementation impl, Program program, ProverContext ctxt, int uniqueId, GlobalVariable errorVariable) {
         Contract.Requires(impl != null);
         Contract.Requires(program != null);
@@ -129,6 +131,8 @@ namespace VC {
         if (errorVariable != null) {
           proc.Modifies.Add(new IdentifierExpr(Token.NoToken, errorVariable));
         }
+        
+        interfacePostMap = new Dictionary<Constant,Variable>();
         foreach (IdentifierExpr e in proc.Modifies) {
           Contract.Assert(e != null);
           if (e.Decl == null)
@@ -142,6 +146,7 @@ namespace VC {
           }
           Expr eqExpr = Expr.Eq(new IdentifierExpr(Token.NoToken, c), new IdentifierExpr(Token.NoToken, v));
           assertExpr = Expr.And(assertExpr, eqExpr);
+          interfacePostMap.Add(c, v);
         }
 
         this.interfaceVars = interfaceVars;

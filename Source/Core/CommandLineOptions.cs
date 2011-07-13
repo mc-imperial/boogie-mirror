@@ -354,6 +354,7 @@ namespace Microsoft.Boogie {
     public int LazyInlining = 0;
     public int StratifiedInlining = 0;
     public int StratifiedInliningOption = 0;
+    public string SummarizeOption = null;
     public bool UseUnsatCoreForInlining = false;
     public int RecursionBound = 500;
     public string inferLeastForUnsat = null;
@@ -1187,6 +1188,14 @@ namespace Microsoft.Boogie {
               StratifiedInliningOption=Int32.Parse(cce.NonNull(args[ps.i]));
             }
             break;
+          case "-summarize":
+          case "/summarize":
+            if (ps.ConfirmArgumentCount(1))
+            {
+                SummarizeOption = cce.NonNull(args[ps.i]);
+            }
+            break;
+
           case "-useUnsatCoreForInlining":
           case "/useUnsatCoreForInlining":
             UseUnsatCoreForInlining = true;
