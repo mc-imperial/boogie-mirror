@@ -105,6 +105,17 @@ namespace Microsoft.Boogie.Z3
             outcome = context.Interpolate(formulas, linOptions, out interpolants, out z3LabelModels);
         }
 
+        public override void InterpolateTree(VCExprTree fmlaTree, out VCExprTree interpolant)
+        {
+            LineariserOptions linOptions = new Z3LineariserOptions(false, (Z3InstanceOptions)this.options, new List<VCExprVar>());
+            outcome = context.InterpolateTree(fmlaTree, linOptions, out interpolant, out z3LabelModels);
+        }
+        
+        public override void OutputFormulas(string file_name, List<VCExpr> fmlas){
+            LineariserOptions linOptions = new Z3LineariserOptions(false, (Z3InstanceOptions)this.options, new List<VCExprVar>());
+            context.OutputFormulas(linOptions, file_name, fmlas);
+        }
+
         public override void Push()
         {
             context.CreateBacktrackPoint();

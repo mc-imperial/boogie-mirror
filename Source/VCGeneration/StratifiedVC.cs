@@ -610,6 +610,7 @@ namespace VC
             abstract public void AddAxiom(VCExpr vc);
             abstract public void LogComment(string str);
             abstract public Outcome Interpolate(VCExpr[] formulas, out VCExpr[] interpolants);
+            abstract public Outcome InterpolateTree(VCExprTree formulas, out VCExprTree interpolants);
             abstract public void updateMainVC(VCExpr vcMain);
             virtual public Outcome CheckAssumptions(List<VCExpr> assumptions, out List<int> unsatCore)
             {
@@ -732,6 +733,13 @@ namespace VC
             }
 
             public override Outcome Interpolate(VCExpr[] formulas, out VCExpr[] interpolants)
+            {
+                Contract.Assert(false);
+                interpolants = null;
+                return Outcome.Inconclusive;
+            }
+
+            public override Outcome InterpolateTree(VCExprTree formulas, out VCExprTree interpolants)
             {
                 Contract.Assert(false);
                 interpolants = null;
@@ -879,6 +887,34 @@ namespace VC
                 TheoremProver.AssertAxioms();
                 var itp = TheoremProver as InterpolatingApiProverInterface;
                 itp.Interpolate(formulas, out interpolants);
+                ProverInterface.Outcome outcome = TheoremProver.CheckOutcome(reporter);
+                //TheoremProver.Pop();
+                numQueries++;
+
+                switch (outcome)
+                {
+                    case ProverInterface.Outcome.Valid:
+                        return Outcome.Correct;
+                    case ProverInterface.Outcome.Invalid:
+                        return Outcome.Errors;
+                    case ProverInterface.Outcome.OutOfMemory:
+                        return Outcome.OutOfMemory;
+                    case ProverInterface.Outcome.TimeOut:
+                        return Outcome.TimedOut;
+                    case ProverInterface.Outcome.Undetermined:
+                        return Outcome.Inconclusive;
+                    default:
+                        Contract.Assert(false);
+                        throw new cce.UnreachableException();
+                }
+            }
+
+            public override Outcome InterpolateTree(VCExprTree formulas, out VCExprTree interpolants)
+            {
+                //TheoremProver.Push();
+                TheoremProver.AssertAxioms();
+                var itp = TheoremProver as InterpolatingApiProverInterface;
+                itp.InterpolateTree(formulas, out interpolants);
                 ProverInterface.Outcome outcome = TheoremProver.CheckOutcome(reporter);
                 //TheoremProver.Pop();
                 numQueries++;
@@ -1184,6 +1220,10 @@ namespace VC
             bool incrementalSearch = true;
             // This flag allows the VCs (and live variable analysis) to be created on-demand
             bool createVConDemand = true;
+            // This flag causes the problem to be output in muZ format
+            bool writemuZ = false;
+            // This flag indicates quantifiers should be added to muZ formulas
+            bool writemuZWithQuantifiers = false;
 
             switch (CommandLineOptions.Clo.StratifiedInliningOption)
             {
@@ -1203,6 +1243,13 @@ namespace VC
                     incrementalSearch = false;
                     createVConDemand = false;
                     break;
+                case 4:
+                    writemuZ = true;
+                    break;
+                case 5:
+                    writemuZ = true;
+                    writemuZWithQuantifiers = true;
+                    break;
             }
             #endregion
 
@@ -1221,6 +1268,39 @@ namespace VC
             // Build VCs for all procedures
             Contract.Assert(implName2StratifiedInliningInfo != null);
             this.program = program;
+
+            // Generate a problem for muZ
+            if (writemuZ)
+            {
+                List<VCExpr> vcs = new List<VCExpr>();
+                foreach (StratifiedInliningInfo info in implName2StratifiedInliningInfo.Values)
+                {
+                    Contract.Assert(info != null);
+                    GenerateVCForStratifiedInlining(program, info, checker);
+                    VCExpr myvc = checker.VCExprGen.Implies(info.vcexpr,info.funcExpr);
+                    if (writemuZWithQuantifiers)
+                    {
+                        foreach (var v in info.privateVars)
+                            myvc = checker.VCExprGen.Forall(v, new VCTrigger(true, new List<VCExpr>()), myvc);
+                        foreach (var v in info.interfaceExprVars)
+                            myvc = checker.VCExprGen.Forall(v, new VCTrigger(true, new List<VCExpr>()), myvc);
+                    }
+                    vcs.Add(myvc);
+                }
+                VCExpr mytopvc;
+                StratifiedInliningErrorReporter myreporter;
+                Hashtable/*<int, Absy!>*/ mymainLabel2absy;
+                GetVC(impl, program, callback, out mytopvc, out mymainLabel2absy, out myreporter);
+                
+                mytopvc = checker.VCExprGen.Implies(checker.VCExprGen.Not(mytopvc), VCExpressionGenerator.False); 
+                vcs.Add(mytopvc);
+
+                var foo = checker.TheoremProver as InterpolatingApiProverInterface;
+                Contract.Assert(foo != null);
+                foo.OutputFormulas("rules.smt",vcs);
+                System.Console.WriteLine("Rules output to rules.smt");
+                return Outcome.Inconclusive;
+            }
 
             if (!createVConDemand)
             {
@@ -1625,6 +1705,33 @@ namespace VC
             return subtree;
         }
 
+        private VCExprTree getVCTree(VerificationState vState, Dictionary<int, int> parents, Dictionary<int, VCExpr> assumptions, Dictionary<int, VCExprTree> tree){
+            var children = new Dictionary<int,List<int>>();
+            for(int i = parents.Count; i >= 0; i--){
+                if(parents.ContainsKey(i)){
+                    int p = parents[i];
+                    if(!children.ContainsKey(p)) children.Add(p,new List<int>());
+                    children[p].Add(i);
+                }
+                if(!children.ContainsKey(i)) children.Add(i,new List<int>());
+                var chs = children[i].Select(x => tree[x]).ToArray();
+                var node = new VCExprTree();
+                node.children = chs;
+                node.expr = (vState.vcMap.ContainsKey(i)) ? vState.vcMap[i]
+                    : assumptions.ContainsKey(i) ? assumptions[i]
+                    : VCExpressionGenerator.True;
+                tree.Add(i,node);
+            }
+            return tree[0];
+        }
+
+        private void vcTreeCopyExprs(VCExprTree from, VCExprTree to)
+        {
+            for (int i = 0; i < from.children.Length; i++)
+                vcTreeCopyExprs(from.children[i], to.children[i]);
+            to.expr = from.expr;
+        }
+
         private void CheckAssumptions2(VerificationState vState, StratifiedCheckerInterface checker, List<VCExpr> assumptions, List<int> ids, out Outcome ret, out List<int> unsatCore, out bool incrementalSearch)
         {
             incrementalSearch =
@@ -1648,6 +1755,7 @@ namespace VC
                 }
             }
             
+#if false
             var formulas = new VCExpr[2]; 
             if (!incrementalSearch)
             {
@@ -1684,6 +1792,32 @@ namespace VC
             //ret = checker.CheckAssumptions(assumptions, out unsatCore);
             VCExpr[] interpolants;
             ret = checker.Interpolate(formulas, out interpolants);
+#else
+            VCExprTree formulas = null;
+            var tree = new Dictionary<int, VCExprTree>();
+            if (!incrementalSearch)
+            {
+                vState.checker.Push();
+                // vState.checker.AddAxiom(VCExpressionGenerator.vcMain, false);
+                var my_checker = vState.checker.underlyingChecker;
+                //vState.checker.AddAxiom(my_checker.VCExprGen.Not(vState.vcMain));
+                var mainVc = my_checker.VCExprGen.Not(vState.vcMain);
+                var xg = vState.checker.underlyingChecker.VCExprGen;
+                
+                var assumptions_map = new Dictionary<int, VCExpr>();
+                var assumptions_a = assumptions.ToArray();
+                var ids_a = ids.ToArray();
+                for(int i = 0; i < assumptions_a.Length; i++)
+                    assumptions_map.Add(ids_a[i],assumptions_a[i]);
+                formulas = getVCTree(vState, vState.calls.candidateParent, assumptions_map, tree);
+                formulas.expr = xg.AndSimp(formulas.expr, mainVc);
+            }
+
+            //ret = checker.CheckAssumptions(assumptions, out unsatCore);
+            VCExprTree interpolants;
+            ret = checker.InterpolateTree(formulas, out interpolants);
+#endif
+
             unsatCore = null;
 
             if (!incrementalSearch)
@@ -1691,7 +1825,8 @@ namespace VC
                 vState.checker.Pop();
             }
 
-#if true
+#if false
+
             if (interpolants != null && cid != -1)
             {
                 var uchecker = vState.checker.underlyingChecker;
@@ -1725,6 +1860,49 @@ namespace VC
                         interpolants[i] = subst.Mutate(interpolants[i], substForall);
 
                         Console.WriteLine("Summary for procedure " + procName + ": " + interpolants[i].ToString());
+                    }
+                }
+            }
+
+#else
+            if (interpolants != null)
+            {
+                vcTreeCopyExprs(interpolants, formulas); // copy interpolants over so we know the map from candidates
+
+                var uchecker = vState.checker.underlyingChecker;
+
+                foreach (var bar in vState.calls.id2Candidate)
+                {
+                    VCExprNAry expr = bar.Value;
+                    Contract.Assert(expr != null);
+                    string procName = (cce.NonNull(expr.Op as VCExprBoogieFunctionOp)).Func.Name;
+                    cid = bar.Key;
+                    if (!implName2StratifiedInliningInfo.ContainsKey(procName))
+                        throw new Exception("couldn't find info for procedure " + procName);
+
+                    StratifiedInliningInfo info = implName2StratifiedInliningInfo[procName];
+                    if (info.initialized)
+                    {
+                        if(!tree.ContainsKey(cid)) continue;
+                    
+                        // Map the "forall" variables back to the originals
+                        Dictionary<VCExprVar, VCExpr> substForallDict = new Dictionary<VCExprVar, VCExpr>();
+                        Contract.Assert(info.interfaceExprVars.Count == expr.Length);
+                        for (int j = 0; j < info.interfaceExprVars.Count; j++)
+                        {
+                            var v = expr[j] as VCExprVar;
+                            if (v == null) throw new Exception("Parameter for " + procName + " is not a variable");
+                            substForallDict.Add(v, info.interfaceExprVars[j]);
+                        }
+                        substForallDict.Add(vState.calls.id2ControlVar[cid], VCExpressionGenerator.True);
+
+                        VCExprSubstitution substForall = new VCExprSubstitution(substForallDict, new Dictionary<TypeVariable, Microsoft.Boogie.Type>());
+
+                        SubstitutingVCExprVisitor subst = new SubstitutingVCExprVisitor(uchecker.VCExprGen); Contract.Assert(subst != null);
+                        tree[cid].expr = subst.Mutate(tree[cid].expr, substForall);
+
+                        Console.WriteLine("Summary for procedure " + procName + ": " + tree[cid].expr.ToString());
+                        System.IO.File.AppendAllText("summaries.txt", "\nSummary for procedure " + procName + ": " + tree[cid].expr.ToString() + "\n");
                     }
                 }
             }
@@ -2318,7 +2496,27 @@ namespace VC
 
                     if (implName2StratifiedInliningInfo.ContainsKey(calleeName))
                     {
+                        VCExpr constraint = VCExpressionGenerator.True;
+#if true
+                        // KLM: Fix for interpolation
+                        // Replace actual parameters with fresh variables constrained to be equal to them.
+                        // For interpolants to be correct procedure summaries, the actual parameters
+                        // must be distinct variables.
+                        var actuals = new VCExpr[callExpr.Length];
+                        for (int i = 0; i < callExpr.Length; i++)
+                        {
+                            string actual_name = "si_actu_" + candidateCount.ToString() + "_" + i.ToString();
+                            var actual_type = callExpr[i].Type;
+                            VCExpr actual_var = Gen.Variable(actual_name, actual_type);
+                            actuals[i] = actual_var;
+                            constraint = Gen.AndSimp(constraint,Gen.Eq(actual_var,callExpr[i]));
+                        } 
+                        callExpr = Gen.Function(callExpr.Op,actuals.ToList()) as VCExprNAry;
+#endif                        
                         int candidateId = GetNewId(callExpr);
+                        
+
+                        
                         boogieExpr2Id[new BoogieCallExpr(naryExpr, currInlineCount)] = candidateId;
                         candidateParent[candidateId] = currInlineCount;
                         string label = GetLabel(candidateId);
@@ -2327,7 +2525,8 @@ namespace VC
                             candidate2callId[candidateId] = unique_call_id;
 
                         //return Gen.LabelPos(label, callExpr);
-                        return Gen.LabelPos(label, id2ControlVar[candidateId]);
+                        constraint = Gen.AndSimp(id2ControlVar[candidateId],constraint); 
+                        return Gen.LabelPos(label, constraint);
                     }
                     else if (calleeName.StartsWith(recordProcName))
                     {

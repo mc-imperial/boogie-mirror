@@ -8,7 +8,7 @@ using Microsoft.Boogie.AbstractInterpretation;
 using Microsoft.Boogie;
 using Microsoft.Boogie.Z3;
 using Microsoft.Z3;
-using Microsoft.FociZ3;
+//using Microsoft.FociZ3;
 using Microsoft.Boogie.VCExprAST;
 using Microsoft.Basetypes;
 
@@ -22,6 +22,7 @@ namespace Microsoft.Boogie.Z3 {
     internal BacktrackDictionary<string, FuncDecl> functions = new BacktrackDictionary<string, FuncDecl>();
     internal BacktrackDictionary<string, Term> labels = new BacktrackDictionary<string, Term>();
     internal BacktrackDictionary<Term, VCExpr> constants_inv = new BacktrackDictionary<Term, VCExpr>();
+    internal BacktrackDictionary<FuncDecl, Function> functions_inv = new BacktrackDictionary<FuncDecl, Function>();
 
     public Config config;
     public Context z3;
@@ -37,11 +38,17 @@ namespace Microsoft.Boogie.Z3 {
     public Z3apiProverContext(Z3InstanceOptions opts, VCExpressionGenerator gen)
       : base(gen, new VCGenerationOptions(new List<string>())) {
       int timeout = opts.Timeout * 1000;
+      if (CommandLineOptions.Clo.SimplifyLogFilePath != null)
+      {
+          logFilename = CommandLineOptions.Clo.SimplifyLogFilePath;
+      } 
+        if (logFilename != null)
+          Z3Log.Open(logFilename);
       config = new Config();
       config.SetParamValue("MODEL", "true");
-      //config.SetParamValue("MODEL_V2", "true");
-      //config.SetParamValue("MODEL_COMPLETION", "true");
-      //config.SetParamValue("MBQI", "false");
+      config.SetParamValue("MODEL_V2", "true");
+      config.SetParamValue("MODEL_COMPLETION", "true");
+      config.SetParamValue("MBQI", "false");
       config.SetParamValue("TYPE_CHECK", "true");
       if (0 <= timeout) {
         config.SetParamValue("SOFT_TIMEOUT", timeout.ToString());
@@ -50,16 +57,13 @@ namespace Microsoft.Boogie.Z3 {
       if (0 <= CommandLineOptions.Clo.ProverCCLimit) {
         this.counterexamples = CommandLineOptions.Clo.ProverCCLimit;
       }
-      if (CommandLineOptions.Clo.SimplifyLogFilePath != null) {
-        logFilename = CommandLineOptions.Clo.SimplifyLogFilePath;
-      }
+      
       this.debugTraces = new List<string>();
 
       z3 = new FociZ3Context(config);
-      z3.SetPrintMode(PrintMode.Smtlib2Compliant);
-      if (logFilename != null)
-        z3.OpenLog(logFilename);
-      foreach (string tag in debugTraces)
+     // z3.SetPrintMode(PrintMode.Smtlib2Compliant);
+
+        foreach (string tag in debugTraces)
         z3.EnableDebugTrace(tag);
 
       this.z3log = null;
@@ -99,6 +103,7 @@ namespace Microsoft.Boogie.Z3 {
       Sort rangeAst = tm.GetType(range);
       FuncDecl constDeclAst = z3.MkFuncDecl(symbolAst, domainAst.ToArray(), rangeAst);
       functions.Add(functionName, constDeclAst);
+      functions_inv.Add(constDeclAst, f);
       log("(declare-funs (({0} {1} {2})))", functionName, domainStr, rangeAst);
     }
 
@@ -124,7 +129,7 @@ namespace Microsoft.Boogie.Z3 {
     }
 
     public void CloseLog() {
-      z3.CloseLog();
+      // z3.CloseLog();
       if (z3log != null) {
         z3log.Close();
       }
@@ -137,17 +142,19 @@ namespace Microsoft.Boogie.Z3 {
       functions.CreateBacktrackPoint();
       labels.CreateBacktrackPoint();
       constants_inv.CreateBacktrackPoint();
+      functions_inv.CreateBacktrackPoint();
       z3.Push();
       log("(push)");
     }
 
     public void Backtrack() {
-      z3.Pop();
       labels.Backtrack();
       functions.Backtrack();
       constants.Backtrack();
       symbols.Backtrack();
       constants_inv.Backtrack();
+      functions_inv.Backtrack();
+      z3.Pop();
 
       log("(pop)");
     }
@@ -181,6 +188,7 @@ namespace Microsoft.Boogie.Z3 {
         Symbol symbol = z3.GetDeclName(decl);
         string functionName = z3.GetSymbolString(symbol);
         functions.Add(functionName, decl);
+        throw new Exception("Don't know how to handle SMTLIB function declaration");
       }
       foreach (Term assumption in assumptions) {
         log("(assert {0})", assumption);
@@ -367,12 +375,34 @@ namespace Microsoft.Boogie.Z3 {
         private VCExpressionGenerator gen;
         private Dictionary<Term, VCExpr> memo;
         private BacktrackDictionary<Term,VCExpr> constants_inv;
+        private BacktrackDictionary<FuncDecl, Function> functions_inv;
+        private List<VCExprLetBinding> lets;
+        private int let_ctr = 0;
+
+        private VCExpr create_let(Term t, VCExpr u){
+            var name = "$x" + let_ctr.ToString();
+            let_ctr++;
+            var sym = gen.Variable(name,u.Type);
+            memo.Remove(t);
+            memo.Add(t, sym);
+            lets.Add(gen.LetBinding(sym, u));
+            return sym;
+        }
 
         public fromZ3(VCExpressionGenerator _gen,
-                      BacktrackDictionary<Term,VCExpr> _constants_inv){
+                      BacktrackDictionary<Term,VCExpr> _constants_inv,
+                      BacktrackDictionary<FuncDecl, Function> _functions_inv)
+        {
             gen = _gen;
             constants_inv = _constants_inv;
+            functions_inv = _functions_inv;
             memo = new Dictionary<Term, VCExpr>();
+            lets = new List<VCExprLetBinding>();
+        }
+
+        public void clear(){
+            memo.Clear();
+            lets.Clear();
         }
 
         public VCExpr get(Term arg)
@@ -396,8 +426,14 @@ namespace Microsoft.Boogie.Z3 {
                     switch (arg.GetAppDecl().GetKind())
                     {
                         case DeclKind.Add:
-                            Debug.Assert(vcargs.Length == 2);
-                            res = gen.Add(vcargs[0], vcargs[1]);
+                            if (vcargs.Length == 0)
+                                res = gen.Integer(Basetypes.BigNum.FromInt(0));
+                            else
+                            {
+                                res = vcargs[0];
+                                for (int k = 1; k < vcargs.Length; k++)
+                                    res = gen.Add(res, vcargs[k]);
+                            }
                             break;
                         case DeclKind.And:
                             res = VCExpressionGenerator.True;
@@ -429,7 +465,9 @@ namespace Microsoft.Boogie.Z3 {
                             break;
                         case DeclKind.Iff:
                             Debug.Assert(vcargs.Length == 2);
-                            throw new Exception("Z3 op Iff not supported");
+                            var l = create_let(args[0], vcargs[0]);
+                            var r = create_let(args[1], vcargs[1]);
+                            return gen.And(gen.Implies(l, r), gen.Implies(r, l));
                         case DeclKind.Implies:
                             Debug.Assert(vcargs.Length == 2);
                             res = gen.Implies(vcargs[0], vcargs[1]);
@@ -488,10 +526,16 @@ namespace Microsoft.Boogie.Z3 {
                             if (args.Length == 0)
                             { // a 0-ary constant is a VCExprVar
                                 if (!constants_inv.TryGetValue(arg, out res))
-                                throw new Exception("Z3 returned unknown constant: " + name);
+                                    throw new Exception("Z3 returned unknown constant: " + name);
                             }
                             else
-                                throw new Exception("Z3 uninterpreted functions not supported yet");
+                            {
+                                Function f;
+                                if (!functions_inv.TryGetValue(arg.GetAppDecl(), out f))
+                                    throw new Exception("Z3 returned unknown function: " + name);
+                                List<VCExpr> vcargsList = new List<VCExpr>(vcargs);
+                                res = gen.Function(f, vcargsList);
+                            }   
                             break;
                         default:
                             throw new Exception("Unknown Z3 operator");
@@ -504,6 +548,14 @@ namespace Microsoft.Boogie.Z3 {
 
             memo.Add(arg, res);
             return res;
+        }
+        public VCExpr add_lets(VCExpr e)
+        {
+            foreach (var let in lets)
+            {
+                e = gen.Let(e, let);
+            }
+            return e;
         }
     }
 
@@ -546,10 +598,11 @@ namespace Microsoft.Boogie.Z3 {
         else if (outcome == LBool.False)
         {
             interpolants = new VCExpr[formulas.Length - 1];
-            var fZ = new fromZ3(gen, constants_inv);
+            var fZ = new fromZ3(gen, constants_inv, functions_inv);
             for (int i = 0; i < formulas.Length - 1; i++)
             {
-                interpolants[i] = fZ.get(interpolant_terms[i]);
+                interpolants[i] = fZ.add_lets(fZ.get(interpolant_terms[i]));
+                fZ.clear();
             }
             return ProverInterface.Outcome.Valid;
         }
@@ -559,6 +612,84 @@ namespace Microsoft.Boogie.Z3 {
             interpolants = null;
             return ProverInterface.Outcome.Undetermined;
         }
+    }
+
+    private TermTree toTermTree(VCExprTree f, LineariserOptions linOptions)
+    {
+        TermTree[] chs = new TermTree[f.children.Length];
+        for (int i = 0; i < chs.Length; i++)
+            chs[i] = toTermTree(f.children[i],linOptions);
+        Z3apiExprLineariser visitor = new Z3apiExprLineariser(this, namer);
+        Term z3ast = (Term)f.expr.Accept(visitor, linOptions);
+        return new TermTree(z3ast, chs);
+    }
+
+    private VCExprTree fromTermTree(TermTree t, fromZ3 fZ)
+    {
+        VCExprTree[] chs = new VCExprTree[t.getChildren().Length];
+        for (int i = 0; i < chs.Length; i++)
+            chs[i] = fromTermTree(t.getChildren()[i],fZ);
+        var res = new VCExprTree();
+        res.children = chs;
+        res.expr = fZ.add_lets(fZ.get(t.getTerm()));
+        fZ.clear();
+        return res;
+    }
+
+
+    public ProverInterface.Outcome InterpolateTree(
+        VCExprTree formulas,
+        LineariserOptions linOptions,
+        out VCExprTree interpolants,
+        out List<Z3ErrorModelAndLabels> boogieErrors)
+    {
+        Microsoft.Boogie.Helpers.ExtraTraceInformation("Sending data to the theorem prover");
+        boogieErrors = new List<Z3ErrorModelAndLabels>();
+        LBool outcome = LBool.Undef;
+
+        Microsoft.Z3.Model z3Model = null;
+        TermTree formula_terms = toTermTree(formulas, linOptions);
+        TermTree interpolant_terms = null;
+        var z3itp = z3 as FociZ3Context;
+        LabeledLiterals labels = null;
+        outcome = z3itp.InterpolateTree(formula_terms, ref interpolant_terms, ref z3Model, ref labels);
+
+        if (outcome != LBool.False)
+        {
+            BoogieErrorsFromLabels(boogieErrors, z3Model, labels);
+        }
+
+        if (boogieErrors.Count > 0)
+        {
+            interpolants = null;
+            return ProverInterface.Outcome.Invalid;
+        }
+        else if (outcome == LBool.False)
+        {
+            interpolants = fromTermTree(interpolant_terms,new fromZ3(gen, constants_inv, functions_inv));
+            return ProverInterface.Outcome.Valid;
+        }
+        else
+        {
+            Debug.Assert(outcome == LBool.Undef);
+            interpolants = null;
+            return ProverInterface.Outcome.Undetermined;
+        }
+    }
+
+    public void OutputFormulas(LineariserOptions linOptions, string file_name, List<VCExpr> formulas)
+    {
+        Term[] formula_terms = new Term[formulas.Count-1];
+        for (int i = 0; i < formulas.Count-1; i++)
+        {
+            Z3apiExprLineariser visitor = new Z3apiExprLineariser(this, namer);
+            Term z3ast = (Term)formulas[i].Accept(visitor, linOptions);
+            formula_terms[i] = z3ast;
+        }
+        Z3apiExprLineariser visitor1 = new Z3apiExprLineariser(this, namer);
+        Term last = (Term)formulas[formulas.Count - 1].Accept(visitor1, linOptions);
+        string smtlib = z3.BenchmarkToSmtlib("unknown", "AUFLIA", "unsat", "", formula_terms, last);
+        System.IO.File.WriteAllText(file_name, smtlib);
     }
 
     private void BoogieErrorsFromLabels(List<Z3ErrorModelAndLabels> boogieErrors, Microsoft.Z3.Model z3Model, LabeledLiterals labels)

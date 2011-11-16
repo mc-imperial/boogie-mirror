@@ -873,9 +873,16 @@ namespace Microsoft.Boogie {
       public abstract void Push();
   }
 
+  public class VCExprTree {
+      public VCExprTree[] children;
+      public VCExpr expr;
+  }
+
   public abstract class InterpolatingApiProverInterface : ApiProverInterface
   {
       public abstract void Interpolate(VCExpr[] formulas, out VCExpr[] interpolants);
+      public abstract void InterpolateTree(VCExprTree fmlaTree, out VCExprTree interpolant);
+      public abstract void OutputFormulas(string file_name, List<VCExpr> fmlas);
   }
 
     
