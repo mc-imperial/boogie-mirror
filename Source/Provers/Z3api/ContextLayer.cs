@@ -42,8 +42,8 @@ namespace Microsoft.Boogie.Z3 {
       {
           logFilename = CommandLineOptions.Clo.SimplifyLogFilePath;
       } 
-        if (logFilename != null)
-          Z3Log.Open(logFilename);
+      if (logFilename != null)
+         Z3Log.Open(logFilename);
       config = new Config();
       config.SetParamValue("MODEL", "true");
       config.SetParamValue("MODEL_V2", "true");
@@ -61,12 +61,18 @@ namespace Microsoft.Boogie.Z3 {
       this.debugTraces = new List<string>();
 
       z3 = new FociZ3Context(config);
-     // z3.SetPrintMode(PrintMode.Smtlib2Compliant);
+      //z3.SetPrintMode(PrintMode.Smtlib2Compliant);
 
         foreach (string tag in debugTraces)
         z3.EnableDebugTrace(tag);
 
-      this.z3log = null;
+        this.z3log = null;
+        /*
+         if (CommandLineOptions.Clo.SimplifyLogFilePath != null)
+        {
+            z3log = new StreamWriter(CommandLineOptions.Clo.SimplifyLogFilePath);
+        } 
+         */
       this.tm = new Z3TypeCachedBuilder(this);
       this.namer = new UniqueNamer();
     }
@@ -636,6 +642,17 @@ namespace Microsoft.Boogie.Z3 {
         return res;
     }
 
+    private string tree2string(VCExprTree formulas)
+    {
+        var ret = "";
+        if (formulas == null) return ret;
+        ret += string.Format("(assert {0}){1}", formulas.expr.ToString(), Environment.NewLine);
+        foreach (var ch in formulas.children)
+        {
+            ret += tree2string(ch);
+        }
+        return ret;
+    }
 
     public ProverInterface.Outcome InterpolateTree(
         VCExprTree formulas,
@@ -646,6 +663,7 @@ namespace Microsoft.Boogie.Z3 {
         Microsoft.Boogie.Helpers.ExtraTraceInformation("Sending data to the theorem prover");
         boogieErrors = new List<Z3ErrorModelAndLabels>();
         LBool outcome = LBool.Undef;
+        log("{0}", tree2string(formulas));
 
         Microsoft.Z3.Model z3Model = null;
         TermTree formula_terms = toTermTree(formulas, linOptions);
