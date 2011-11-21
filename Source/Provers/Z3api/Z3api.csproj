@@ -134,9 +134,9 @@
   </Target>
   -->
   <ItemGroup>
-    <Reference Include="Microsoft.FociZ3.cpp, Version=1.0.4289.18507, Culture=neutral, processorArchitecture=x86">
+    <Reference Include="Microsoft.FociZ3.cpp, Version=1.0.4342.22962, Culture=neutral, processorArchitecture=x86">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\smvsat\Debug\Microsoft.FociZ3.cpp.dll</HintPath>
+      <HintPath>..\..\..\Binaries\Microsoft.FociZ3.cpp.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core">
