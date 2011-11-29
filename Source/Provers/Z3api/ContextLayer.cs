@@ -503,7 +503,7 @@ namespace Microsoft.Boogie.Z3 {
                             res = gen.Not(vcargs[0]);
                             break;
                         case DeclKind.Or:
-                            res = VCExpressionGenerator.True;
+                            res = VCExpressionGenerator.False;
                             for (int i = 0; i < vcargs.Length; i++)
                                 res = gen.OrSimp(res, vcargs[i]);
                             break;
