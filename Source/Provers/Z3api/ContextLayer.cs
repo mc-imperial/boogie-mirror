@@ -589,7 +589,7 @@ namespace Microsoft.Boogie.Z3 {
         Term[] interpolant_terms;
         var z3itp = z3 as FociZ3Context;
         LabeledLiterals labels;
-        outcome = z3itp.Interpolate(formula_terms, out interpolant_terms, out z3Model, out labels);
+        outcome = z3itp.Interpolate(formula_terms, out interpolant_terms, out z3Model, out labels, false);
 
         if (outcome != LBool.False)
         {
@@ -670,7 +670,7 @@ namespace Microsoft.Boogie.Z3 {
         TermTree interpolant_terms = null;
         var z3itp = z3 as FociZ3Context;
         LabeledLiterals labels = null;
-        outcome = z3itp.InterpolateTree(formula_terms, ref interpolant_terms, ref z3Model, ref labels);
+        outcome = z3itp.InterpolateTree(formula_terms, ref interpolant_terms, ref z3Model, ref labels, false);
 
         if (outcome != LBool.False)
         {
