@@ -30,3 +30,10 @@ Rewrote assembly into Postcondition0.exe
 -------------------- Postcondition1 --------------------
 Compiled assembly into Postcondition1.exe
 Rewrote assembly into Postcondition1.exe
+
+-------------------- Old0 --------------------
+Compiled assembly into Old0.exe
+Rewrote assembly into Old0.exe
+
+-------------------- Old1 --------------------
+Compilation error: compilation of nested old expressions is not supported
