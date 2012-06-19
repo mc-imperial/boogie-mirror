@@ -7,7 +7,7 @@ set BPLEXE=%BOOGIEDIR%\Boogie.exe
 
 for %%f in (AssumeStmt0 AssumeStmt1 AssertStmt0 AssertStmt1
     Precondition0 Precondition1 Postcondition0 Postcondition1
-    Old0 Old1) do (
+    Old0 Old1 Invariant0 Invariant1 Invariant2 Invariant3) do (
   echo.
   echo -------------------- %%f --------------------
   %DAFNY_EXE% /nologo /errorTrace:0 /verification:0 /runtimeChecking:1 /compile:2 %* %%f.dfy
