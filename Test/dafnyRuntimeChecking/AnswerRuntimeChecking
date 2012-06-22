@@ -97,3 +97,10 @@ Rewrote assembly into GhostQuantifiers0.exe
 -------------------- GhostQuantifiers1 --------------------
 Compilation error: compilation of unbounded quantifiers is not supported
 Compilation error: compilation of unbounded quantifiers is not supported
+
+-------------------- Postcondition2 --------------------
+Compilation error: old expressions cannot refer to out parameters
+
+-------------------- Postcondition3 --------------------
+Compiled assembly into Postcondition3.exe
+Rewrote assembly into Postcondition3.exe
