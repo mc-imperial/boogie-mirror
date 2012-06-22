@@ -104,3 +104,7 @@ Compilation error: old expressions cannot refer to out parameters
 -------------------- Postcondition3 --------------------
 Compiled assembly into Postcondition3.exe
 Rewrote assembly into Postcondition3.exe
+
+-------------------- Allocated0 --------------------
+Compiled assembly into Allocated0.exe
+Rewrote assembly into Allocated0.exe
