@@ -89,3 +89,11 @@ Rewrote assembly into MethodGhostParams3.exe
 -------------------- GhostModule0 --------------------
 Compiled assembly into GhostModule0.exe
 Rewrote assembly into GhostModule0.exe
+
+-------------------- GhostQuantifiers0 --------------------
+Compiled assembly into GhostQuantifiers0.exe
+Rewrote assembly into GhostQuantifiers0.exe
+
+-------------------- GhostQuantifiers1 --------------------
+Compilation error: compilation of unbounded quantifiers is not supported
+Compilation error: compilation of unbounded quantifiers is not supported
