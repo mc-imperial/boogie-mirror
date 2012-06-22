@@ -25,7 +25,6 @@ namespace GPUVerify
         private HashSet<string> ReservedNames = new HashSet<string>();
 
         private int TempCounter = 0;
-        private int invariantGenerationCounter = 0;
 
         internal const string LOCAL_ID_X_STRING = "local_id_x";
         internal const string LOCAL_ID_Y_STRING = "local_id_y";
@@ -62,8 +61,6 @@ namespace GPUVerify
         public IRaceInstrumenter RaceInstrumenter;
 
         public UniformityAnalyser uniformityAnalyser;
-        public MayBeThreadConfigurationVariableAnalyser mayBeTidAnalyser;
-        public MayBeGidAnalyser mayBeGidAnalyser;
         public MayBeLocalIdPlusConstantAnalyser mayBeTidPlusConstantAnalyser;
         public MayBeGlobalIdPlusConstantAnalyser mayBeGidPlusConstantAnalyser;
         public MayBePowerOfTwoAnalyser mayBePowerOfTwoAnalyser;
@@ -362,15 +359,13 @@ namespace GPUVerify
 
             DoUniformityAnalysis();
 
-            DoMayBeTidAnalysis();
+            DoVariableDefinitionAnalysis();
 
             DoMayBeIdPlusConstantAnalysis();
 
             DoMayBePowerOfTwoAnalysis();
 
             DoArrayControlFlowAnalysis();
-
-            DoVariableDefinitionAnalysis();
 
             if (CommandLineOptions.ShowStages)
             {
@@ -482,15 +477,6 @@ namespace GPUVerify
         {
             mayBePowerOfTwoAnalyser = new MayBePowerOfTwoAnalyser(this);
             mayBePowerOfTwoAnalyser.Analyse();
-        }
-
-        private void DoMayBeTidAnalysis()
-        {
-            mayBeTidAnalyser = new MayBeThreadConfigurationVariableAnalyser(this);
-            mayBeTidAnalyser.Analyse();
-
-            mayBeGidAnalyser = new MayBeGidAnalyser(this);
-            mayBeGidAnalyser.Analyse();
         }
 
         private void DoMayBeIdPlusConstantAnalysis()
@@ -815,18 +801,16 @@ namespace GPUVerify
 
         internal void AddCandidateRequires(Procedure Proc, Expr e)
         {
-            Constant ExistentialBooleanConstant = MakeExistentialBoolean(Proc.tok);
+            Constant ExistentialBooleanConstant = Program.MakeExistentialBoolean();
             IdentifierExpr ExistentialBoolean = new IdentifierExpr(Proc.tok, ExistentialBooleanConstant);
             Proc.Requires.Add(new Requires(false, Expr.Imp(ExistentialBoolean, e)));
-            Program.TopLevelDeclarations.Add(ExistentialBooleanConstant);
         }
 
         internal void AddCandidateEnsures(Procedure Proc, Expr e)
         {
-            Constant ExistentialBooleanConstant = MakeExistentialBoolean(Proc.tok);
+            Constant ExistentialBooleanConstant = Program.MakeExistentialBoolean();
             IdentifierExpr ExistentialBoolean = new IdentifierExpr(Proc.tok, ExistentialBooleanConstant);
             Proc.Ensures.Add(new Ensures(false, Expr.Imp(ExistentialBoolean, e)));
-            Program.TopLevelDeclarations.Add(ExistentialBooleanConstant);
         }
 
         private List<Expr> GetUserSuppliedInvariants(string ProcedureName)
@@ -1043,21 +1027,27 @@ namespace GPUVerify
             return _GROUP_SIZE_Z != null;
         }
 
-        internal Constant MakeExistentialBoolean(IToken tok)
+        internal static string StripThreadIdentifier(string p, out int id)
         {
-            Constant ExistentialBooleanConstant = new Constant(tok, new TypedIdent(tok, "_b" + invariantGenerationCounter, Microsoft.Boogie.Type.Bool), false);
-            invariantGenerationCounter++;
-            ExistentialBooleanConstant.AddAttribute("existential", new object[] { Expr.True });
-            return ExistentialBooleanConstant;
+            if (p.EndsWith("$1"))
+            {
+                id = 1;
+                return p.Substring(0, p.Length - 2);
+            }
+            if (p.EndsWith("$2"))
+            {
+                id = 2;
+                return p.Substring(0, p.Length - 2);
+            }
+
+            id = 0;
+            return p;
         }
 
         internal static string StripThreadIdentifier(string p)
         {
-            if (p.Contains("$"))
-            {
-                return p.Substring(0, p.LastIndexOf("$"));
-            }
-            return p;
+            int id;
+            return StripThreadIdentifier(p, out id);
         }
 
         private void AddStartAndEndBarriers()
@@ -1310,7 +1300,9 @@ namespace GPUVerify
         private Expr MakeBVFunctionCall(string functionName, string smtName, Microsoft.Boogie.Type resultType, params Expr[] args)
         {
             Function f = GetOrCreateBVFunction(functionName, smtName, resultType, args.Select(a => a.Type).ToArray());
-            return new NAryExpr(Token.NoToken, new FunctionCall(f), new ExprSeq(args));
+            var e = new NAryExpr(Token.NoToken, new FunctionCall(f), new ExprSeq(args));
+            e.Type = resultType;
+            return e;
         }
 
         private Expr MakeBitVectorBinaryBoolean(string suffix, string smtName, Expr lhs, Expr rhs)
@@ -1326,6 +1318,9 @@ namespace GPUVerify
         internal Expr MakeBVSlt(Expr lhs, Expr rhs) { return MakeBitVectorBinaryBoolean("SLT", "bvslt", lhs, rhs); }
         internal Expr MakeBVSgt(Expr lhs, Expr rhs) { return MakeBitVectorBinaryBoolean("SGT", "bvsgt", lhs, rhs); }
         internal Expr MakeBVSge(Expr lhs, Expr rhs) { return MakeBitVectorBinaryBoolean("SGE", "bvsge", lhs, rhs); }
+
+        internal Expr MakeBVAnd(Expr lhs, Expr rhs) { return MakeBitVectorBinaryBitVector("AND", "bvand", lhs, rhs); }
+        internal Expr MakeBVSub(Expr lhs, Expr rhs) { return MakeBitVectorBinaryBitVector("SUB", "bvsub", lhs, rhs); }
 
         internal static Expr MakeBitVectorBinaryBoolean(string functionName, Expr lhs, Expr rhs)
         {
@@ -2153,7 +2148,7 @@ namespace GPUVerify
         {
             if (CommandLineOptions.Unstructured)
             {
-                BlockPredicator.Predicate(this, Program);
+                BlockPredicator.Predicate(Program, /*createCandidateInvariants=*/CommandLineOptions.Inference);
                 return;
             }
 
@@ -2257,19 +2252,9 @@ namespace GPUVerify
 
         internal void AddCandidateInvariant(IRegion region, Expr e, string tag)
         {
-            region.AddInvariant(CreateCandidateInvariant(e, tag));
+            region.AddInvariant(Program.CreateCandidateInvariant(e, tag));
         }
 
-        internal PredicateCmd CreateCandidateInvariant(Expr e, string tag)
-        {
-            Constant ExistentialBooleanConstant = MakeExistentialBoolean(Token.NoToken);
-            IdentifierExpr ExistentialBoolean = new IdentifierExpr(Token.NoToken, ExistentialBooleanConstant);
-            PredicateCmd invariant = new AssertCmd(Token.NoToken, Expr.Imp(ExistentialBoolean, e));
-            invariant.Attributes = new QKeyValue(Token.NoToken, "tag", new List<object>(new object[] { tag }), null);
-            Program.TopLevelDeclarations.Add(ExistentialBooleanConstant);
-            return invariant;
-        }
-            
         internal Implementation GetImplementation(string procedureName)
         {
             foreach (Declaration D in Program.TopLevelDeclarations)
@@ -2312,11 +2297,6 @@ namespace GPUVerify
             return !arrayControlFlowAnalyser.MayAffectControlFlow(v.Name);
         }
 
-        internal static Expr StripThreadIdentifiers(Expr e)
-        {
-            return new ThreadIdentifierStripper().VisitExpr(e.Clone() as Expr);
-        }
-
         internal Expr GlobalIdExpr(string dimension)
         {
             return GPUVerifier.MakeBitVectorBinaryBitVector("BV32_ADD", GPUVerifier.MakeBitVectorBinaryBitVector("BV32_MUL",
@@ -2331,15 +2311,115 @@ namespace GPUVerify
           else
               return new StructuredRegion(Impl);
         }
-    }
 
-    class ThreadIdentifierStripper : StandardVisitor
-    {
-        public override Variable VisitVariable(Variable node)
+
+        public static bool IsGivenConstant(Expr e, Constant c)
         {
-            node.Name = GPUVerifier.StripThreadIdentifier(node.Name);
-            return base.VisitVariable(node);
+            if (!(e is IdentifierExpr))
+                return false;
+
+            var varName = ((IdentifierExpr)e).Decl.Name;
+            return (StripThreadIdentifier(varName) == StripThreadIdentifier(c.Name));
         }
+
+        public bool SubstIsGivenConstant(Implementation impl, Expr e, Constant c)
+        {
+            if (!(e is IdentifierExpr))
+                return false;
+            e = varDefAnalyses[impl].SubstDefinitions(e, impl.Name);
+            return IsGivenConstant(e, c);
+        }
+
+        public Constant GetLocalIdConst(int dim)
+        {
+            switch (dim)
+            {
+                case 0:  return _X;
+                case 1:  return _Y;
+                case 2:  return _Z;
+                default: Debug.Assert(false);
+                         return null;
+            }
+        }
+
+        public Constant GetGroupIdConst(int dim)
+        {
+            switch (dim)
+            {
+                case 0:  return _GROUP_X;
+                case 1:  return _GROUP_Y;
+                case 2:  return _GROUP_Z;
+                default: Debug.Assert(false);
+                         return null;
+            }
+        }
+
+        public Constant GetGroupSizeConst(int dim)
+        {
+            switch (dim)
+            {
+                case 0:  return _GROUP_SIZE_X;
+                case 1:  return _GROUP_SIZE_Y;
+                case 2:  return _GROUP_SIZE_Z;
+                default: Debug.Assert(false);
+                         return null;
+            }
+        }
+
+        public bool IsLocalId(Expr e, int dim, Implementation impl)
+        {
+            return SubstIsGivenConstant(impl, e, GetLocalIdConst(dim));
+        }
+
+        public bool IsGlobalId(Expr e, int dim, Implementation impl)
+        {
+            e = varDefAnalyses[impl].SubstDefinitions(e, impl.Name);
+
+            if (e is NAryExpr && (e as NAryExpr).Fun.FunctionName.Equals("BV32_ADD"))
+            {
+                NAryExpr nary = e as NAryExpr;
+                Constant localId = GetLocalIdConst(dim);
+
+                if (IsGivenConstant(nary.Args[1], localId))
+                {
+                    return IsGroupIdTimesGroupSize(nary.Args[0], dim);
+                }
+
+                if (IsGivenConstant(nary.Args[0], localId))
+                {
+                    return IsGroupIdTimesGroupSize(nary.Args[1], dim);
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsGroupIdTimesGroupSize(Expr expr, int dim)
+        {
+            if (expr is NAryExpr && (expr as NAryExpr).Fun.FunctionName.Equals("BV32_MUL"))
+            {
+                NAryExpr innerNary = expr as NAryExpr;
+
+                if (IsGroupIdAndSize(dim, innerNary.Args[0], innerNary.Args[1]))
+                {
+                    return true;
+                }
+
+                if (IsGroupIdAndSize(dim, innerNary.Args[1], innerNary.Args[0]))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool IsGroupIdAndSize(int dim, Expr maybeGroupId, Expr maybeGroupSize)
+        {
+            return IsGivenConstant(maybeGroupId, GetGroupIdConst(dim)) &&
+                   IsGivenConstant(maybeGroupSize, GetGroupSizeConst(dim));
+        }
+
+
     }
 
 }

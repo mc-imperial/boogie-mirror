@@ -108,20 +108,16 @@
     <Compile Include="AccessRecord.cs" />
     <Compile Include="ArrayControlFlowAnalyser.cs" />
     <Compile Include="AsymmetricExpressionFinder.cs" />
-    <Compile Include="BlockPredicator.cs" />
     <Compile Include="UnstructuredRegion.cs" />
     <Compile Include="IRegion.cs" />
-    <Compile Include="GraphAlgorithms.cs" />
     <Compile Include="InvariantGenerationRules\LoopVariableBoundsInvariantGenerator.cs" />
     <Compile Include="InvariantGenerationRules\InvariantGenerationRule.cs" />
     <Compile Include="InvariantGenerationRules\PowerOfTwoInvariantGenerator.cs" />
-    <Compile Include="MayBeGidAnalyser.cs" />
     <Compile Include="EnsureDisabledThreadHasNoEffectInstrumenter.cs" />
     <Compile Include="KernelDualiser.cs" />
     <Compile Include="LiveVariableAnalyser.cs" />
     <Compile Include="LoopInvariantGenerator.cs" />
     <Compile Include="MayBePowerOfTwoAnalyser.cs" />
-    <Compile Include="MayBeThreadConfigurationVariableAnalyser.cs" />
     <Compile Include="MayBeIdPlusConstantAnalyser.cs" />
     <Compile Include="StructuredProgramVisitor.cs" />
     <Compile Include="CrossThreadInvariantProcessor.cs" />
@@ -169,6 +165,10 @@
     <ProjectReference Include="..\ParserHelper\ParserHelper.csproj">
       <Project>{FCD3AC7F-9DFD-46C8-AB1E-09F0B0F16DC5}</Project>
       <Name>ParserHelper</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\VCGeneration\VCGeneration.csproj">
+      <Project>{E1F10180-C7B9-4147-B51F-FA1B701966DC}</Project>
+      <Name>VCGeneration</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
