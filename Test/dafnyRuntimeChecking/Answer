@@ -593,7 +593,7 @@ namespace Dafny {
 public class @__default {
   public void @Main()
   {
-    Contract.Assume((new BigInteger(2)) < (new BigInteger(10)));
+    Contract.Assert((new BigInteger(2)) < (new BigInteger(10)));
   }
   public static void Main(string[] args) {
     @__default b = new @__default();
@@ -1195,7 +1195,7 @@ namespace Dafny {
 public class @__default {
   public void @Main()
   {
-    Contract.Assume((new BigInteger(10)) < (new BigInteger(2)));
+    Contract.Assert((new BigInteger(10)) < (new BigInteger(2)));
   }
   public static void Main(string[] args) {
     @__default b = new @__default();
@@ -6633,11 +6633,9 @@ public class @__default {
     Contract.Assert((@_0_x) <= (new BigInteger(10)));
     while ((@_0_x) < (new BigInteger(10)))
     {
-      Contract.Assume((@_0_x) <= (new BigInteger(10)));
       @_0_x = (@_0_x) + (new BigInteger(1));
       Contract.Assert((@_0_x) <= (new BigInteger(10)));
     }
-    Contract.Assume((@_0_x) <= (new BigInteger(10)));
   }
   public static void Main(string[] args) {
     @__default b = new @__default();
@@ -7247,14 +7245,10 @@ public class @__default {
     Contract.Assert((@_1_y) == (new BigInteger(0)));
     while ((@_0_x) < (new BigInteger(10)))
     {
-      Contract.Assume((@_0_x) <= (new BigInteger(10)));
-      Contract.Assume((@_1_y) == (new BigInteger(0)));
       @_0_x = (@_0_x) + (new BigInteger(1));
       Contract.Assert((@_0_x) <= (new BigInteger(10)));
       Contract.Assert((@_1_y) == (new BigInteger(0)));
     }
-    Contract.Assume((@_0_x) <= (new BigInteger(10)));
-    Contract.Assume((@_1_y) == (new BigInteger(0)));
   }
   public static void Main(string[] args) {
     @__default b = new @__default();
@@ -7858,14 +7852,12 @@ public class @__default {
   {
     BigInteger @_0_x = new BigInteger(0);
     @_0_x = new BigInteger(0);
-    Contract.Assume((@_0_x) <= (new BigInteger(10)));
+    Contract.Assert((@_0_x) <= (new BigInteger(10)));
     while ((@_0_x) < (new BigInteger(10)))
     {
-      Contract.Assume((@_0_x) <= (new BigInteger(10)));
       @_0_x = (@_0_x) + (new BigInteger(1));
-      Contract.Assume((@_0_x) <= (new BigInteger(10)));
+      Contract.Assert((@_0_x) <= (new BigInteger(10)));
     }
-    Contract.Assume((@_0_x) <= (new BigInteger(10)));
   }
   public static void Main(string[] args) {
     @__default b = new @__default();
@@ -8471,18 +8463,14 @@ public class @__default {
     @_0_x = new BigInteger(0);
     BigInteger @_1_y = new BigInteger(0);
     @_1_y = new BigInteger(0);
-    Contract.Assume((@_0_x) <= (new BigInteger(10)));
-    Contract.Assume((@_1_y) == (new BigInteger(0)));
+    Contract.Assert((@_0_x) <= (new BigInteger(10)));
+    Contract.Assert((@_1_y) == (new BigInteger(0)));
     while ((@_0_x) < (new BigInteger(10)))
     {
-      Contract.Assume((@_0_x) <= (new BigInteger(10)));
-      Contract.Assume((@_1_y) == (new BigInteger(0)));
       @_0_x = (@_0_x) + (new BigInteger(1));
-      Contract.Assume((@_0_x) <= (new BigInteger(10)));
-      Contract.Assume((@_1_y) == (new BigInteger(0)));
+      Contract.Assert((@_0_x) <= (new BigInteger(10)));
+      Contract.Assert((@_1_y) == (new BigInteger(0)));
     }
-    Contract.Assume((@_0_x) <= (new BigInteger(10)));
-    Contract.Assume((@_1_y) == (new BigInteger(0)));
   }
   public static void Main(string[] args) {
     @__default b = new @__default();
