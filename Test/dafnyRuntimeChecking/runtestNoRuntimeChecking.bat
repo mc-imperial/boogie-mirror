@@ -15,7 +15,7 @@ for %%f in (AssumeStmt0 AssumeStmt1 AssertStmt0 AssertStmt1
     Postcondition3 Allocated0 Precondition2 Postcondition4) do (
   echo.
   echo -------------------- %%f --------------------
-  %DAFNY_EXE% /nologo /errorTrace:0 /verification:0 /runtimeChecking:0 /compile:2 %* %%f.dfy
+  %DAFNY_EXE% /nologo /errorTrace:0 /runtimeChecking:0 /compile:3 %* %%f.dfy
   if exist %%f.cs. (
     del %%f.cs
   )
