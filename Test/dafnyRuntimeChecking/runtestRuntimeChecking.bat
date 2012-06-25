@@ -12,7 +12,7 @@ for %%f in (AssumeStmt0 AssumeStmt1 AssertStmt0 AssertStmt1
     MethodGhostParams0 MethodGhostParams1 GhostMethod0
     MethodGhostParams2 MethodGhostParams3 GhostModule0
     GhostQuantifiers0 GhostQuantifiers1 Postcondition2
-    Postcondition3 Allocated0 Precondition2) do (
+    Postcondition3 Allocated0 Precondition2 Postcondition4) do (
   echo.
   echo -------------------- %%f --------------------
   %DAFNY_EXE% /nologo /errorTrace:0 /verification:0 /runtimeChecking:1 /compile:2 %* %%f.dfy
